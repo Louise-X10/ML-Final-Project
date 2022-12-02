@@ -24,7 +24,14 @@ unique = unique.drop(labels='author', axis=1)
 text = unique['text']
 
 # to be reviewed
-grammar = "NP: {<DT>?<JJ>*<NN>}"
+grammar = """
+NP: {<DT>?<JJ>*<NN>} #To extract Noun Phrases
+P: {<IN>}            #To extract Prepositions
+V: {<V.*>}           #To extract Verbs
+PP: {<p> <NP>}       #To extract Prepositional Phrases
+VP: {<V> <NP|PP>*}   #To extract Verb Phrases
+"""
+                    
 chunk_parser = nltk.RegexpParser(grammar)
 
 for tweet in text:
