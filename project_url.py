@@ -142,7 +142,7 @@ url_neglect_words= ["Miss_Wildfire", "clots", "cancers", "ryan", "cole"]
 # or return binary feature vector of whether tweet url contains keyword
 def remove_url_keyword(df, keywords, return_bool = False):
     
-    def func(x, key_words):
+    def has_keyword(x, key_words):
         # false if tween doesn't have entity info
         if pd.isna(x):
             return False
@@ -164,7 +164,7 @@ def remove_url_keyword(df, keywords, return_bool = False):
         return any(key_list)
     
     # boolean for whether each tweet contains any of the url key words
-    url_key_bool = df['entities'].apply(lambda x: func(x, keywords))
+    url_key_bool = df['entities'].apply(lambda x: has_keyword(x, keywords))
     if return_bool:
         return url_key_bool
     
@@ -172,16 +172,61 @@ def remove_url_keyword(df, keywords, return_bool = False):
     print("remove key words in urls: {}\n".format(np.shape(removed_url)))
     return removed_url
 
+def count_url(df):
+    def count_url(x):
+        # false if tween doesn't have entity info
+        if pd.isna(x):
+            return 0
+        
+        # false if tweet doesn't have url
+        if 'urls' not in ast.literal_eval(x):
+            return 0
+        
+        # true if tweet url has key words
+        url_list = ast.literal_eval(x)['urls']
+        return len(url_list)
+    
+    return df['entities'].apply(count_url)
+
 # extract feature of whether text contains all caps words
 def extract_caps(df):
     def has_caps(tweet):
         return len(re.findall(r'\b[A-Z]+\b', tweet)) != 0
     return df['text'].apply(has_caps)
 
+def count_caps(df):
+    def has_caps(tweet):
+        return len(re.findall(r'\b[A-Z]+\b', tweet))
+    return df['text'].apply(has_caps)
+
 def extract_exclaim(df):
     def has_exclaim(tweet):
         return len(re.findall(r'\!', tweet)) != 0
     return df['text'].apply(has_exclaim)
+
+def count_exclaim(df):
+    def has_exclaim(tweet):
+        return len(re.findall(r'\!', tweet))
+    return df['text'].apply(has_exclaim)
+
+def extract_hashtag(df):
+    def has_hashtag(x):
+        if pd.isna(x):
+            return False
+        if 'hashtags' in ast.literal_eval(x):
+            return True
+        return False
+    return df['entities'].apply(has_hashtag)
+
+def count_hashtag(df):
+    def has_hashtag(x):
+        if pd.isna(x):
+            return 0
+        if 'hashtags' in ast.literal_eval(x):
+            return len(ast.literal_eval(x)['hashtags'])
+        return 0
+    return df['entities'].apply(has_hashtag)
+
 # removed tweets with urls that contain neglect words
 twitter = remove_url_keyword(twitter, url_neglect_words)
 
@@ -189,19 +234,59 @@ twitter = remove_url_keyword(twitter, url_neglect_words)
 contain_url = keep_url(twitter, True)
 contain_url.name = 'url'
 
+count_url = count_url(twitter)
+count_url.name = 'count_url'
+
+
 # all caps feature
 contain_caps = extract_caps(twitter)
 contain_caps.name = 'caps'
+
+count_caps = count_caps(twitter)
+count_caps.name = 'count_caps'
 
 # exclamation mark feature
 contain_exclaim = extract_exclaim(twitter)
 contain_exclaim.name = 'exclaim'
 
+count_exclaim = count_exclaim(twitter)
+count_exclaim.name = 'count_exclaim'
+
+# hash tag feature
+contain_hashtag = extract_hashtag(twitter)
+contain_hashtag.name = 'hashtag'
+
+count_hashtag = count_hashtag(twitter)
+count_hashtag.name = 'count_hashtag'
+
 # url contain certain keywords
 url_contain_keyword = remove_url_keyword(twitter, url_key_words, return_bool=True)
 url_contain_keyword.name = 'url_keyword'
 
-feature_df = pd.concat([contain_url, 
-                        contain_caps, 
-                        contain_exclaim,
-                        url_contain_keyword], axis=1)
+feature_df = pd.concat([count_url, 
+                        url_contain_keyword,
+                        count_caps,
+                        count_exclaim,
+                        count_hashtag], axis=1)
+
+
+# analyze text to extract key word features
+tokenized_text = []
+for text in twitter['text']:
+    tokenized_text += word_tokenize(text)
+
+text_fd = nltk.FreqDist(tokenized_text)
+text_fd = dict(text_fd)
+
+# search for special characters
+pattern = '[^\w\s]'
+for key in list(text_fd.keys()):
+    if re.search(pattern, key):
+        text_fd.pop(key)
+for key in list(text_fd.keys()):
+    if key in stopwords.words("english"):
+        text_fd.pop(key)
+
+# list most common words in tweets
+text_fd = dict(sorted(text_fd.items(), key=lambda item: item[1], reverse=True))
+list(text_fd.items())[0:20]
