@@ -9,19 +9,10 @@ Created on Sun Nov 20 17:38:19 2022
 import pandas as pd
 import numpy as np
 import ast
+import re
 import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize, wordpunct_tokenize, RegexpTokenizer
 from nltk.corpus import stopwords
-
-twitter = pd.read_csv("twitter_wildfire_data_oct22.csv", header=0)
-
-#geo = twitter['geo']
-#np.where(~pd.isnull(geo)) # only 830 entries with {} in geo col
-
-# drop columns with no info
-twitter = twitter.drop(labels='geo', axis=1)
-twitter = twitter.drop(labels='media', axis=1)
-twitter = twitter.drop(labels='author', axis=1)
 
 #remove entries about CSGO
 def remove_CSGO(df):
@@ -52,12 +43,21 @@ def keep_retweet(df):
     print("only retweets: {}\n".format(np.shape(retweets)))
     return retweets
 
+# remove retweets
+def remove_retweet(df):
+    no_retweets = df.loc[df['text'].str.find('RT @')==-1]
+    print("no retweets: {}\n".format(np.shape(no_retweets)))
+    return no_retweets
+
 # get only tweets that contain url
-def keep_url(df):
+# or return the binary feature vector `contain_url`
+def keep_url(df, return_bool = False):
     # look for urls: return True if entities contains urls, else False. return False if entities = Nan
     url_bool = df['entities'].apply(lambda x:'urls' in ast.literal_eval(x).keys() if pd.notnull(x) else False)
     urls = df[url_bool]
     print("only contain urls: {}\n".format(np.shape(urls))) # tweets with url: 49523
+    if return_bool:
+        return url_bool
     return urls
 
 def return_expanded_url(x):
@@ -106,12 +106,23 @@ def get_url_fd (df, clean = True, cutoff = 100):
         return url_fd_clean
     
     return url_fd
-    
+
+twitter = pd.read_csv("twitter_wildfire_data_oct22.csv", header=0)
+
+#geo = twitter['geo']
+#np.where(~pd.isnull(geo)) # only 830 entries with {} in geo col
+
+# drop columns with no info
+twitter = twitter.drop(labels='geo', axis=1)
+twitter = twitter.drop(labels='media', axis=1)
+twitter = twitter.drop(labels='author', axis=1)
+
 # apply filters
 twitter = remove_en(twitter)
 twitter = remove_duplicate(twitter)
 unrelated_words = ["CSGO", "covid"]
 twitter = remove_keyword(twitter, unrelated_words)
+twitter = remove_retweet(twitter)
 
 # url analysis to further clean data
 twitter_url = keep_url(twitter)
@@ -124,27 +135,73 @@ url_list[0:50]
 
 # url_fd_clean['org'] = 1769
 # select url key words based on freq table
-# url_key_words= ["news", "national", "wildfire", "fire", "smoke"]
+url_key_words= ["news", "national", "wildfire", "fire", "smoke"]
 url_neglect_words= ["Miss_Wildfire", "clots", "cancers", "ryan", "cole"]
 
-def remove_url_keyword(df, keywords):
+# remove tweets where url contains keyword
+# or return binary feature vector of whether tweet url contains keyword
+def remove_url_keyword(df, keywords, return_bool = False):
     
     def func(x, key_words):
+        # false if tween doesn't have entity info
+        if pd.isna(x):
+            return False
+        
+        # false if tweet doesn't have url
+        if 'urls' not in ast.literal_eval(x):
+            return False
+        
+        # true if tweet url has key words
         url_list = ast.literal_eval(x)['urls']
         key_list = []
         for url in url_list:
             link = url.pop("unwound_url", None)
             if link == None:
-                boolean = any(key_word in url['expanded_url'] for key_word in key_words)
+                boolean = any(keyword in url['expanded_url'] for keyword in keywords)
             else:
-                boolean = any(key_word in link for key_word in key_words)
+                boolean = any(keyword in link for keyword in keywords)
             key_list.append(boolean)
-        return key_list
-
-    url_key_bool = df['entities'].apply(lambda x: func(x, keywords))
-
+        return any(key_list)
+    
     # boolean for whether each tweet contains any of the url key words
-    url_key_bool_condense = url_key_bool.apply(any)
-    return df[~url_key_bool_condense]
+    url_key_bool = df['entities'].apply(lambda x: func(x, keywords))
+    if return_bool:
+        return url_key_bool
+    
+    removed_url = df[~url_key_bool]
+    print("remove key words in urls: {}\n".format(np.shape(removed_url)))
+    return removed_url
 
-twitter_url = remove_url_keyword(twitter_url, url_neglect_words)
+# extract feature of whether text contains all caps words
+def extract_caps(df):
+    def has_caps(tweet):
+        return len(re.findall(r'\b[A-Z]+\b', tweet)) != 0
+    return df['text'].apply(has_caps)
+
+def extract_exclaim(df):
+    def has_exclaim(tweet):
+        return len(re.findall(r'\!', tweet)) != 0
+    return df['text'].apply(has_exclaim)
+# removed tweets with urls that contain neglect words
+twitter = remove_url_keyword(twitter, url_neglect_words)
+
+# binary feature of whether tweet contains url
+contain_url = keep_url(twitter, True)
+contain_url.name = 'url'
+
+# all caps feature
+contain_caps = extract_caps(twitter)
+contain_caps.name = 'caps'
+
+# exclamation mark feature
+contain_exclaim = extract_exclaim(twitter)
+contain_exclaim.name = 'exclaim'
+
+# url contain certain keywords
+url_contain_keyword = remove_url_keyword(twitter, url_key_words, return_bool=True)
+url_contain_keyword.name = 'url_keyword'
+
+feature_df = pd.concat([contain_url, 
+                        contain_caps, 
+                        contain_exclaim,
+                        url_contain_keyword], axis=1)
