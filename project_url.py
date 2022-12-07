@@ -13,6 +13,7 @@ import re
 import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize, wordpunct_tokenize, RegexpTokenizer
 from nltk.corpus import stopwords
+from sklearn.cluster import KMeans
 
 #remove entries about CSGO
 def remove_CSGO(df):
@@ -270,6 +271,11 @@ feature_df = pd.concat([count_url,
                         count_hashtag], axis=1)
 
 
+
+kmeans = KMeans(n_clusters=3).fit(feature_df)
+tweet_labels = kmeans.labels_
+
+'''
 # analyze text to extract key word features
 tokenized_text = []
 for text in twitter['text']:
@@ -290,3 +296,10 @@ for key in list(text_fd.keys()):
 # list most common words in tweets
 text_fd = dict(sorted(text_fd.items(), key=lambda item: item[1], reverse=True))
 list(text_fd.items())[0:20]
+
+
+from sklearn.feature_extraction.text import CountVectorizer
+vectorizer2 = CountVectorizer(analyzer='word', ngram_range=(1, 2))
+X2 = vectorizer2.fit_transform(twitter['text'])
+print(X2.toarray())
+'''
