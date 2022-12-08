@@ -8,14 +8,14 @@ from nltk import sent_tokenize, word_tokenize
 # vers: 12/8/22
 # outputs a tweet's polarity and the frequency of each kind of token
 
+# grab data
 polarity = pd.read_csv('unique_tweet_sentiment.csv', usecols = ['polarity'])
-
 text = pd.read_csv('unique_tweet_sentiment.csv', usecols = ['text'])
 
 print(np.shape(text))
 print(np.shape(polarity))
 
-# to be reviewed
+# louise's grammar for parsing tweets
 grammar = """
 NP: {<DT>?<JJ>*<NN>} #To extract Noun Phrases
 P: {<IN>}            #To extract Prepositions
@@ -26,6 +26,8 @@ VP: {<V> <NP|PP>*}   #To extract Verb Phrases
                     
 chunk_parser = nltk.RegexpParser(grammar)
 
+# find word tag frequency and polarity for each tweet
+# output results
 count = 0
 for tweet in text.values:
     print(tweet)
