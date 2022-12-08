@@ -28,17 +28,37 @@ chunk_parser = nltk.RegexpParser(grammar)
 
 # find word tag frequency and polarity for each tweet
 # output results
+polar_one_count = 0 # amount of positive tweets
 count = 0
+zero_dict = {}
+one_dict = {}
+total_dict = {}
 for tweet in text.values:
     print(tweet)
     tokens = word_tokenize(np.array2string(tweet))
     pos_tags = nltk.pos_tag(tokens)
+    tweet_pol = polarity.values[count]
     tag_dict = {}
+    # modify coordinating dictionary and return modifications back
+    if tweet_pol == 1:
+        polar_one_count += 1
+        tag_dict = one_dict
+    else:
+        tag_dict = zero_dict
     for tag in pos_tags:
         if tag[1] not in tag_dict:
             tag_dict[tag[1]] = 1;
         else:
             tag_dict[tag[1]] += 1;
     print(tag_dict)
-    print ("polarity: " + str(polarity.values[count]))
+    print("polarity: " + str(tweet_pol))
     count += 1
+    if tweet_pol == 1:
+        one_dict = tag_dict
+    else:
+        zero_dict = tag_dict
+
+# output
+print(polar_one_count)
+print(zero_dict)
+print(one_dict)
