@@ -8,7 +8,9 @@ sia = SentimentIntensityAnalyzer()
 def is_positive(tweet):
     return 1 if sia.polarity_scores(tweet)['compound'] > 0 else 0
 
-tweets = pd.read_csv('unique_tweets.csv')
+tweets = pd.read_csv('twitter_wildfire_data_oct22.csv')
+tweets = tweets.loc[tweets['lang'] == 'en']
+tweets = tweets.drop_duplicates(['text'])
 tweet_text = [t.replace('://','//') for t in tweets['text']]
 
 print('going through tweet polarity')
