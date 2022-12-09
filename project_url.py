@@ -14,17 +14,8 @@ import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize, wordpunct_tokenize, RegexpTokenizer
 from nltk.corpus import stopwords
 from sklearn.cluster import KMeans
-
-#remove entries about CSGO
-def remove_CSGO(df):
-    no_csgo = df.loc[~df['text'].str.contains('CSGO', regex=False)]
-    print("without csgo tweets: {}\n".format(np.shape(no_csgo)))
-    return no_csgo
-
-def remove_keyword(df, keywords):
-# filter unrelated words: 164388
-    no_keywords = df[~df['text'].str.contains('|'.join(keywords), regex=False)]
-    return no_keywords
+from nltk.sentiment import SentimentIntensityAnalyzer
+from nltk.stem import PorterStemmer
 
 #remove entries not in english
 def remove_en(df):
@@ -38,37 +29,36 @@ def remove_duplicate(df):
     print("unique entries in text column: {}\n".format(np.shape(unique)))
     return unique
 
-#get only retweets
-def keep_retweet(df):
-    retweets = df.loc[df['text'].str.find('RT @')==0]
-    print("only retweets: {}\n".format(np.shape(retweets)))
-    return retweets
-
 # remove retweets
 def remove_retweet(df):
     no_retweets = df.loc[df['text'].str.find('RT @')==-1]
     print("no retweets: {}\n".format(np.shape(no_retweets)))
     return no_retweets
 
-# get only tweets that contain url
-# or return the binary feature vector `contain_url`
-def keep_url(df, return_bool = False):
-    # look for urls: return True if entities contains urls, else False. return False if entities = Nan
-    url_bool = df['entities'].apply(lambda x:'urls' in ast.literal_eval(x).keys() if pd.notnull(x) else False)
-    urls = df[url_bool]
-    print("only contain urls: {}\n".format(np.shape(urls))) # tweets with url: 49523
-    if return_bool:
-        return url_bool
-    return urls
+#remove entries containing keywords
+def remove_keyword(df, keywords):
+    no_keywords = df[~df['text'].str.contains('|'.join(keywords), regex=False)]
+    print("tweets with keywords removed: {}\n".format(np.shape(no_keywords)))
+    return no_keywords
 
+# returns list of expanded urls for each tweet
 def return_expanded_url(x):
+    if pd.isna(x):
+        return []
+    if 'urls' not in ast.literal_eval(x):
+            return []
     url_list = ast.literal_eval(x)['urls']
     return_list = []
     for url in url_list:
         return_list.append(url['expanded_url'])
     return return_list
 
+# returns list of unwound urls for each tweet
 def return_unwound_url(x):
+    if pd.isna(x):
+        return []
+    if 'urls' not in ast.literal_eval(x):
+            return []
     url_list = ast.literal_eval(x)['urls']
     return_list = []
     for url in url_list:
@@ -78,40 +68,72 @@ def return_unwound_url(x):
         return_list.append(link)
     return return_list
 
-# get column of urls
-def only_url(df):
-    only_url = df["entities"].apply(return_unwound_url)
-    return only_url
-
 # get frequency table for words in url
-# option to ignore words with less than cutoff frequency
-def get_url_fd (df, clean = True, cutoff = 100):
+def get_url_fd (df):
+    
+    # get column of url lists
+    only_url = df["entities"].apply(return_unwound_url)
+    
     url_tokenizer = RegexpTokenizer(r'\w+')
     
     url_words = []
-    for url_list in df:
+    for url_list in only_url:
         for url in url_list:
             url_words += url_tokenizer.tokenize(url)
     
-    url_fd = nltk.FreqDist(url_words)
+    # keep words less than length 15, not stop words
+    url_clean_words = []
+    for word in url_words:
+        word = word.lower()
+        if not re.match('^\w{0,15}$', word):
+            continue
+        if word in stopwords.words("english"):
+            continue
+        url_clean_words.append(word)
+    
+    url_fd = nltk.FreqDist(url_clean_words)
     del url_fd['https']
     del url_fd['http']
-    
-    if clean:
-        url_fd_clean = dict()
-        for key, value in dict(url_fd).items():
-            if value > cutoff:
-                url_fd_clean[key] = value
-        # sort by highest freq
-        url_fd_clean = dict(sorted(url_fd_clean.items(), key=lambda item: item[1], reverse=True))
-        return url_fd_clean
+    del url_fd['www']
+    del url_fd['com']
     
     return url_fd
 
-twitter = pd.read_csv("twitter_wildfire_data_oct22.csv", header=0)
+# returns list of hashtags for each tweet
+def return_hashtags(x):
+    if pd.isna(x):
+        return []    
+    if 'hashtags' not in ast.literal_eval(x):
+        return []    
+    hashtag_list = ast.literal_eval(x)['hashtags']
+    key_list = []
+    for hashtag in hashtag_list:
+        key_list.append(hashtag['tag'].lower())
+    return key_list
+    
+# returns frequency of hashtags
+def get_hashtag_fd (df):
 
-#geo = twitter['geo']
-#np.where(~pd.isnull(geo)) # only 830 entries with {} in geo col
+    only_tags = df['entities'].apply(return_hashtags)
+    
+    all_tags = []
+    for tag in only_tags:
+        all_tags += tag
+    
+    # keep words less than length 15, not stop words, stemmed
+    hashtag_words = []
+    for word in all_tags:
+        if not re.match('^\w{0,15}$', word):
+            continue
+        if word in stopwords.words("english"):
+            continue
+        hashtag_words.append(word)
+    
+    hashtag_fd = nltk.FreqDist(hashtag_words)
+    
+    return hashtag_fd
+
+twitter = pd.read_csv("twitter_wildfire_data_oct22.csv", header=0)
 
 # drop columns with no info
 twitter = twitter.drop(labels='geo', axis=1)
@@ -121,57 +143,61 @@ twitter = twitter.drop(labels='author', axis=1)
 # apply filters
 twitter = remove_en(twitter)
 twitter = remove_duplicate(twitter)
+twitter = remove_retweet(twitter)
 unrelated_words = ["CSGO", "covid"]
 twitter = remove_keyword(twitter, unrelated_words)
-twitter = remove_retweet(twitter)
 
-# url analysis to further clean data
-twitter_url = keep_url(twitter)
-twitter_only_url = only_url(twitter_url)
-url_fd_clean = get_url_fd(twitter_only_url)
+# url analysis 
+url_fd = get_url_fd(twitter)
+hashtag_fd = get_hashtag_fd(twitter)
 
-# look at top 50 words
-url_list = list(url_fd_clean.items())
-url_list[0:50]
+# look at most frequent url words
+url_fd.most_common(20)
+hashtag_fd.most_common(20)
 
 # url_fd_clean['org'] = 1769
 # select url key words based on freq table
-url_key_words= ["news", "national", "wildfire", "fire", "smoke"]
+url_keywords= ["news", "national", "wildfire", "fire", "smoke"]
 url_neglect_words= ["Miss_Wildfire", "clots", "cancers", "ryan", "cole"]
 
 # remove tweets where url contains keyword
 # or return binary feature vector of whether tweet url contains keyword
-def remove_url_keyword(df, keywords, return_bool = False):
+
+def extract_url_keyword(df, keywords):
+    # get column of url lists
+    only_url = df["entities"].apply(return_unwound_url)
     
-    def has_keyword(x, key_words):
+    def has_keyword(url_list, keywords):
+        key_list = []
+        for url in url_list:
+            boolean = any(keyword in url for keyword in keywords)                
+            key_list.append(boolean)
+        return any(key_list)
+    
+    # boolean for whether each tweet contains any of the url key words
+    url_key_bool = only_url.apply(lambda x: has_keyword(x, keywords))
+    return url_key_bool
+    
+def remove_url_keyword(df, keywords):
+    url_key_bool = extract_url_keyword(df, keywords)
+    removed_url = df[~url_key_bool]
+    print("remove key words in urls: {}\n".format(np.shape(removed_url)))
+    return removed_url
+
+# extract url feature
+def extract_url(df):
+    def count_url(x):
         # false if tween doesn't have entity info
         if pd.isna(x):
             return False
         
         # false if tweet doesn't have url
-        if 'urls' not in ast.literal_eval(x):
+        if 'urls' in ast.literal_eval(x):
+            return True
+        else:
             return False
-        
-        # true if tweet url has key words
-        url_list = ast.literal_eval(x)['urls']
-        key_list = []
-        for url in url_list:
-            link = url.pop("unwound_url", None)
-            if link == None:
-                boolean = any(keyword in url['expanded_url'] for keyword in keywords)
-            else:
-                boolean = any(keyword in link for keyword in keywords)
-            key_list.append(boolean)
-        return any(key_list)
     
-    # boolean for whether each tweet contains any of the url key words
-    url_key_bool = df['entities'].apply(lambda x: has_keyword(x, keywords))
-    if return_bool:
-        return url_key_bool
-    
-    removed_url = df[~url_key_bool]
-    print("remove key words in urls: {}\n".format(np.shape(removed_url)))
-    return removed_url
+    return df['entities'].apply(count_url)
 
 def count_url(df):
     def count_url(x):
@@ -200,6 +226,7 @@ def count_caps(df):
         return len(re.findall(r'\b[A-Z]+\b', tweet))
     return df['text'].apply(has_caps)
 
+# extract exclamation mark feature
 def extract_exclaim(df):
     def has_exclaim(tweet):
         return len(re.findall(r'\!', tweet)) != 0
@@ -210,6 +237,7 @@ def count_exclaim(df):
         return len(re.findall(r'\!', tweet))
     return df['text'].apply(has_exclaim)
 
+# extract hashtag feature
 def extract_hashtag(df):
     def has_hashtag(x):
         if pd.isna(x):
@@ -229,10 +257,24 @@ def count_hashtag(df):
     return df['entities'].apply(has_hashtag)
 
 # removed tweets with urls that contain neglect words
-twitter = remove_url_keyword(twitter, url_neglect_words)
+# twitter = remove_url_keyword(twitter, url_neglect_words)
+
+# insert sentiment labels
+sia = SentimentIntensityAnalyzer()
+
+def is_positive(tweet):
+    return 1 if sia.polarity_scores(tweet)['compound'] > 0 else 0
+
+tweet_text = [t.replace('://','//') for t in twitter['text']]
+
+print('going through tweet polarity')
+polarity = list(map(is_positive, tweet_text))
+print('done going through tweet polarity')
+
+twitter.insert(0, 'polarity', polarity)
 
 # binary feature of whether tweet contains url
-contain_url = keep_url(twitter, True)
+contain_url = extract_url(twitter)
 contain_url.name = 'url'
 
 count_url = count_url(twitter)
@@ -261,19 +303,54 @@ count_hashtag = count_hashtag(twitter)
 count_hashtag.name = 'count_hashtag'
 
 # url contain certain keywords
-url_contain_keyword = remove_url_keyword(twitter, url_key_words, return_bool=True)
+url_contain_keyword = extract_url_keyword(twitter, url_keywords)
 url_contain_keyword.name = 'url_keyword'
 
+# most common hashtags
+hashtag_fd.most_common(40)
+hashtag_keywords = list(zip(*hashtag_fd.most_common(40)))[0]
+hashtag_keywords = list(hashtag_keywords)
+
+def extract_common_hashtag_count(df, keywords):
+    # get column of tag lists
+    only_tags = df['entities'].apply(return_hashtags)
+    
+    # count number of common tags for each tweet
+    common_tags = only_tags.apply(lambda tag_list: sum(1 for tag in tag_list if tag in keywords))
+    
+    return common_tags
+
+# common hashtag feature
+count_hashtag_common = extract_common_hashtag_count(twitter, hashtag_keywords)
+count_hashtag_common.name = 'count_hashtag_common'
+
+### MODEL 1
 feature_df = pd.concat([count_url, 
                         url_contain_keyword,
                         count_caps,
                         count_exclaim,
-                        count_hashtag], axis=1)
+                        count_hashtag,
+                        count_hashtag_common], axis=1)
 
+def extract_common_hashtag_features(df, keywords):
+    # get column of tag lists
+    only_tags = df['entities'].apply(return_hashtags)
+    
+    count_df = pd.DataFrame(np.zeros((only_tags.shape[0], len(keywords))), columns = keywords)
+    
+    for i, tag_list in enumerate(only_tags):
+        for tag in tag_list:
+            if tag in keywords:
+                count_df[tag].iloc[i] += 1
+                
+    return count_df
 
+### MODEL 2
+# common hashtag frequency for each tweet
+hashtag_df = extract_common_hashtag_features(twitter, hashtag_keywords)
 
-kmeans = KMeans(n_clusters=3).fit(feature_df)
-tweet_labels = kmeans.labels_
+#kmeans = KMeans(n_clusters=3).fit(feature_df)
+#tweet_labels = kmeans.labels_
 
 '''
 # analyze text to extract key word features
