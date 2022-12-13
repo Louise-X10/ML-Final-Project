@@ -37,7 +37,7 @@ def remove_retweet(df):
 
 #remove entries containing keywords
 def remove_keyword(df, keywords):
-    no_keywords = df[~df['text'].str.contains('|'.join(keywords), regex=False)]
+    no_keywords = df[~df['text'].str.contains('|'.join(keywords), regex=True)]
     print("tweets with keywords removed: {}\n".format(np.shape(no_keywords)))
     return no_keywords
 
@@ -144,25 +144,30 @@ twitter = twitter.drop(labels='author', axis=1)
 twitter = remove_en(twitter)
 twitter = remove_duplicate(twitter)
 twitter = remove_retweet(twitter)
-unrelated_words = ["CSGO", "covid"]
+unrelated_words = ["CSGO", "covid"] # tweets with these words are considered unrelated even if they contain words like "wildfire"
 twitter = remove_keyword(twitter, unrelated_words)
 
-# url analysis 
+# url analysis to further trim dataset
 url_fd = get_url_fd(twitter)
 hashtag_fd = get_hashtag_fd(twitter)
 
-# look at most frequent url words
+# look at most frequent url words, hashtags
 url_fd.most_common(20)
 hashtag_fd.most_common(20)
 
-# url_fd_clean['org'] = 1769
 # select url key words based on freq table
-url_keywords= ["news", "national", "wildfire", "fire", "smoke"]
-url_neglect_words= ["Miss_Wildfire", "clots", "cancers", "ryan", "cole"]
+url_keywords= ["news", "national", "wildfire", "fire", "smoke"] 
+url_neglect_words= ["Miss_Wildfire", "clots", "cancers", "ryan", "cole"] 
 
-# remove tweets where url contains keyword
-# or return binary feature vector of whether tweet url contains keyword
 
+# remove tweets where url contains url_neglect_words
+def remove_url_keyword(df, keywords):
+    url_key_bool = extract_url_keyword(df, keywords)
+    removed_url = df[~url_key_bool]
+    print("remove key words in urls: {}\n".format(np.shape(removed_url)))
+    return removed_url
+
+# extract binary feature vector: whether tweet url contains any of the url_keywords
 def extract_url_keyword(df, keywords):
     # get column of url lists
     only_url = df["entities"].apply(return_unwound_url)
@@ -177,14 +182,8 @@ def extract_url_keyword(df, keywords):
     # boolean for whether each tweet contains any of the url key words
     url_key_bool = only_url.apply(lambda x: has_keyword(x, keywords))
     return url_key_bool
-    
-def remove_url_keyword(df, keywords):
-    url_key_bool = extract_url_keyword(df, keywords)
-    removed_url = df[~url_key_bool]
-    print("remove key words in urls: {}\n".format(np.shape(removed_url)))
-    return removed_url
 
-# extract url feature
+# extract binary feature vector: whether tweet contains url
 def extract_url(df):
     def count_url(x):
         # false if tween doesn't have entity info
@@ -199,6 +198,7 @@ def extract_url(df):
     
     return df['entities'].apply(count_url)
 
+# extract numeric feature: number of url a tweet contains
 def count_url(df):
     def count_url(x):
         # false if tween doesn't have entity info
@@ -215,29 +215,35 @@ def count_url(df):
     
     return df['entities'].apply(count_url)
 
-# extract feature of whether text contains all caps words
+# extract binary feature: whether text contains all caps words 
 def extract_caps(df):
     def has_caps(tweet):
-        return len(re.findall(r'\b[A-Z]+\b', tweet)) != 0
+        # capture words in all caps with at least length 2
+        return len(re.findall(r'\b[A-Z]{2,}\b', tweet)) != 0
     return df['text'].apply(has_caps)
 
+# extract numeric feature: number of all caps words in tweet
+# for example, tweet 40387: "THIS BANGER TWEET SO TRU LOUDER FOR THE PEOPLE IN THE BACK SPREAD THIS LIKE WILDFIRE"
+# has count = 16
+# but also have to beware of propoer nouns like AR in tweet 3
 def count_caps(df):
     def has_caps(tweet):
         return len(re.findall(r'\b[A-Z]+\b', tweet))
     return df['text'].apply(has_caps)
 
-# extract exclamation mark feature
+# extract binary feature: whether tweet contains exclamation mark
 def extract_exclaim(df):
     def has_exclaim(tweet):
         return len(re.findall(r'\!', tweet)) != 0
     return df['text'].apply(has_exclaim)
 
+# extract numeric feature: number of exclamation marks a tweet contains
 def count_exclaim(df):
     def has_exclaim(tweet):
         return len(re.findall(r'\!', tweet))
     return df['text'].apply(has_exclaim)
 
-# extract hashtag feature
+# extract binary hashtag feature: whether tweet contains hashtags
 def extract_hashtag(df):
     def has_hashtag(x):
         if pd.isna(x):
@@ -247,6 +253,7 @@ def extract_hashtag(df):
         return False
     return df['entities'].apply(has_hashtag)
 
+# extract numeric hashtag feature: number of hashtags a tweet contains
 def count_hashtag(df):
     def has_hashtag(x):
         if pd.isna(x):
@@ -257,9 +264,9 @@ def count_hashtag(df):
     return df['entities'].apply(has_hashtag)
 
 # removed tweets with urls that contain neglect words
-# twitter = remove_url_keyword(twitter, url_neglect_words)
+twitter = remove_url_keyword(twitter, url_neglect_words)
 
-# insert sentiment labels
+# insert sentiment labels using pre-trained nltk model
 sia = SentimentIntensityAnalyzer()
 
 def is_positive(tweet):
@@ -273,7 +280,7 @@ print('done going through tweet polarity')
 
 twitter.insert(0, 'polarity', polarity)
 
-# binary feature of whether tweet contains url
+# compute url features
 contain_url = extract_url(twitter)
 contain_url.name = 'url'
 
@@ -302,20 +309,24 @@ contain_hashtag.name = 'hashtag'
 count_hashtag = count_hashtag(twitter)
 count_hashtag.name = 'count_hashtag'
 
-# url contain certain keywords
+# whether url contain certain keywords
 url_contain_keyword = extract_url_keyword(twitter, url_keywords)
 url_contain_keyword.name = 'url_keyword'
 
-# most common hashtags
+# next hashtag analysis
+# look at most common hashtags
 hashtag_fd.most_common(40)
+
+# extract 40 most common hashtags
 hashtag_keywords = list(zip(*hashtag_fd.most_common(40)))[0]
 hashtag_keywords = list(hashtag_keywords)
 
+# extract numeric hashtag feature: the number of common hashtags that a tweet contains
 def extract_common_hashtag_count(df, keywords):
     # get column of tag lists
     only_tags = df['entities'].apply(return_hashtags)
     
-    # count number of common tags for each tweet
+    # count number of common tags contained in each tweet
     common_tags = only_tags.apply(lambda tag_list: sum(1 for tag in tag_list if tag in keywords))
     
     return common_tags
@@ -324,7 +335,30 @@ def extract_common_hashtag_count(df, keywords):
 count_hashtag_common = extract_common_hashtag_count(twitter, hashtag_keywords)
 count_hashtag_common.name = 'count_hashtag_common'
 
-### MODEL 1
+# extract word type count
+def count_wordtype(df):
+    text = df['text']
+    polarity = df['polarity']
+    polarity.reset_index(drop=True,inplace=True)
+    count_df = pd.DataFrame(polarity)
+    for i, tweet in enumerate(text):
+        tokens = word_tokenize(tweet)
+        pos_tags = nltk.pos_tag(tokens)
+        for tag in pos_tags:
+            if tag[1] not in count_df.columns:
+                new_col = pd.DataFrame(np.zeros(len(polarity)), columns=[tag[1]])
+                count_df= pd.concat([count_df, new_col], axis=1)
+                count_df[tag[1]].iloc[i] = 1
+            else:
+                count_df[tag[1]].iloc[i] += 1
+    count_df.drop(labels="polarity", axis=1)
+    return count_df
+    
+    
+wordtype_count = count_wordtype(twitter)
+
+
+### MODEL 1 feature vectors
 feature_df = pd.concat([count_url, 
                         url_contain_keyword,
                         count_caps,
@@ -332,51 +366,5 @@ feature_df = pd.concat([count_url,
                         count_hashtag,
                         count_hashtag_common], axis=1)
 
-def extract_common_hashtag_features(df, keywords):
-    # get column of tag lists
-    only_tags = df['entities'].apply(return_hashtags)
-    
-    count_df = pd.DataFrame(np.zeros((only_tags.shape[0], len(keywords))), columns = keywords)
-    
-    for i, tag_list in enumerate(only_tags):
-        for tag in tag_list:
-            if tag in keywords:
-                count_df[tag].iloc[i] += 1
-                
-    return count_df
-
-### MODEL 2
-# common hashtag frequency for each tweet
-hashtag_df = extract_common_hashtag_features(twitter, hashtag_keywords)
-
-#kmeans = KMeans(n_clusters=3).fit(feature_df)
-#tweet_labels = kmeans.labels_
-
-'''
-# analyze text to extract key word features
-tokenized_text = []
-for text in twitter['text']:
-    tokenized_text += word_tokenize(text)
-
-text_fd = nltk.FreqDist(tokenized_text)
-text_fd = dict(text_fd)
-
-# search for special characters
-pattern = '[^\w\s]'
-for key in list(text_fd.keys()):
-    if re.search(pattern, key):
-        text_fd.pop(key)
-for key in list(text_fd.keys()):
-    if key in stopwords.words("english"):
-        text_fd.pop(key)
-
-# list most common words in tweets
-text_fd = dict(sorted(text_fd.items(), key=lambda item: item[1], reverse=True))
-list(text_fd.items())[0:20]
-
-
-from sklearn.feature_extraction.text import CountVectorizer
-vectorizer2 = CountVectorizer(analyzer='word', ngram_range=(1, 2))
-X2 = vectorizer2.fit_transform(twitter['text'])
-print(X2.toarray())
-'''
+feature_df.reset_index(drop=True,inplace=True)
+feature_df = pd.concat([feature_df, wordtype_count], axis=1)
