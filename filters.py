@@ -23,10 +23,3 @@ print("unique entries in text column: {}\n".format(np.shape(unique)))
 #get only retweets
 retweets = df.loc[df['text'].str.find('RT @')==0]
 print("only retweets: {}\n".format(np.shape(retweets)))
-
-"""
-data = np.array(df.values)
-print(data.shape)
-data = data[np.where('CSGO Skin Giveaway' in data[:,1])]
-print(data.shape)
-"""

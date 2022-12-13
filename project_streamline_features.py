@@ -16,6 +16,7 @@ from nltk.corpus import stopwords
 from sklearn.cluster import KMeans
 from nltk.sentiment import SentimentIntensityAnalyzer
 from nltk.stem import PorterStemmer
+from random import shuffle
 
 #remove entries not in english
 def remove_en(df):
@@ -368,6 +369,26 @@ feature_df = pd.concat([count_url,
 
 feature_df.reset_index(drop=True,inplace=True)
 feature_df = pd.concat([feature_df, wordtype_count], axis=1)
+
+# format features for NLTK Naive Bayes classifer
+def extract_features(tweet_data):
+    features = dict()
+    for idx in tweet_data.index:
+        features[idx] = tweet_data[idx]
+    return features
+
+features = [(extract_features(t[1]), p)
+            for t, p in zip(feature_df.iterrows(), polarity)]
+
+# train naive bayes
+train_count = int(len(features) * 0.8)
+shuffle(features)
+classifier = nltk.NaiveBayesClassifier.train(features[:train_count])
+
+# find most informative features
+classifier.show_most_informative_features(10)
+print('Validation accuracy: {}'.format(
+    nltk.classify.accuracy(classifier, features[train_count:])))
 
 '''
 ### MODEL 2: this model is not used becuase it's information can be consolidated into one feature vector `count_hashtag_common`
