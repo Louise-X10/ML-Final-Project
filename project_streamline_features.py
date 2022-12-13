@@ -368,3 +368,24 @@ feature_df = pd.concat([count_url,
 
 feature_df.reset_index(drop=True,inplace=True)
 feature_df = pd.concat([feature_df, wordtype_count], axis=1)
+
+'''
+### MODEL 2: this model is not used becuase it's information can be consolidated into one feature vector `count_hashtag_common`
+
+# returns a dataframe, each column is a common hashtag, encodes the frequency of that hashtag for each tweet
+def extract_common_hashtag_features(df, keywords):
+    # get column of tag lists
+    only_tags = df['entities'].apply(return_hashtags)
+    
+    count_df = pd.DataFrame(np.zeros((only_tags.shape[0], len(keywords))), columns = keywords)
+    
+    for i, tag_list in enumerate(only_tags):
+        for tag in tag_list:
+            if tag in keywords:
+                count_df[tag].iloc[i] += 1
+                
+    return count_df
+
+# common hashtag frequency for each tweet
+hashtag_df = extract_common_hashtag_features(twitter, hashtag_keywords)
+'''
