@@ -22,3 +22,7 @@ Final code for this project is compiled in `project_streamline_features.py`.
 ## Model building 
 - Labeling data: use NLTK sentiment analyzer
 - Train Naive Bayes Classifier and validate using NLTK
+
+## Various ideas we explored (but didn't work)
+- Compare tweets via parse tree similarities
+- Weak supervision methods
