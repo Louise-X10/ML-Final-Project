@@ -8,6 +8,8 @@ This project requires the `nltk` package. To install the `nltk` package, run the
 pip install nltk
 ```
 
+Final code for this project is compiled in `project_streamline_features.py`.
+
 ## Data preprocessing
 
 - Remove geo, media, and author columns because they contain no data. 
